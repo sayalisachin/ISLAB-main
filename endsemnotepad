@@ -1,0 +1,6 @@
+Note: To run cryptographic operations, you'll need OpenSSL installed, as it provides functions for RSA, AES, SHA, HMAC, and other cryptographic utilities. 
+To compile with OpenSSL, use gcc <filename.c> -o <output> -lssl -lcrypto.
+
+eg:
+gcc client.c -o client -lssl -lcrypto
+gcc server.c -o server -lssl -lcrypto
