@@ -1,14 +1,3 @@
-/*
-Client Side:
-Allow users to log in as a "Doctor" or "Nurse."
-Based on the role, digitally sign a request for patient data using RSA.
-Encrypt sensitive details (e.g., treatment, expenses) if the user is a doctor, leaving out sensitive fields for nurses.
-Send the request with the digital signature to the server.
-Server Side:
-Verify the digital signature and check the role of the requester.
-If verified and role is "Doctor," return full patient details; if "Nurse," return limited details.
-*/
-
 from Crypto.PublicKey import RSA
 from Crypto.Signature import pkcs1_15
 from Crypto.Hash import SHA256
@@ -24,19 +13,17 @@ def generate_rsa_key_pair():
     return private_key, public_key
 
 # Client Side: Encrypt sensitive data, sign request, and send it to the server
-def client_request(patient_data, role, private_key_client, public_key_server):
-    # Only Doctors can access sensitive details (treatment, expenses)
+def client_request(role, patient_data, private_key_client, public_key_server):
+    # Encrypt sensitive details if role is "Doctor"
     if role == "Doctor":
         cipher_rsa = PKCS1_OAEP.new(public_key_server)
-        encrypted_treatment = cipher_rsa.encrypt(patient_data['treatment'].encode())
-        encrypted_expenses = cipher_rsa.encrypt(patient_data['expenses'].encode())
-        patient_data['treatment'] = encrypted_treatment
-        patient_data['expenses'] = encrypted_expenses
+        patient_data['treatment'] = cipher_rsa.encrypt(patient_data['treatment'].encode())
+        patient_data['expenses'] = cipher_rsa.encrypt(patient_data['expenses'].encode())
     elif role == "Nurse":
-        # Nurses do not have access to sensitive fields
+        # Nurses do not access sensitive details
         patient_data.pop('treatment', None)
         patient_data.pop('expenses', None)
-    
+
     # Sign the request
     request_data = f"{role}:{patient_data}".encode()
     hash_request = SHA256.new(request_data)
@@ -49,7 +36,7 @@ def client_request(patient_data, role, private_key_client, public_key_server):
         'signature': signature
     }
 
-    # Serialize data package (in practice, send this over network)
+    # Serialize data package (simulate sending to server by saving to file)
     with open("request_data.pkl", "wb") as file:
         pickle.dump(data_package, file)
     print(f"Data package for {role} sent to server (saved to file).")
@@ -91,17 +78,23 @@ if __name__ == "__main__":
     private_key_client, public_key_client = generate_rsa_key_pair()
     private_key_server, public_key_server = generate_rsa_key_pair()
 
-    # Patient data
-    patient_data = {
-        'name': 'John Doe',
-        'age': 45,
-        'treatment': 'Physical Therapy',
-        'expenses': '$500'
-    }
-
-    # Simulate Client Request
+    # User input for role
     role = input("Enter role (Doctor/Nurse): ")
-    client_request(patient_data, role, private_key_client, public_key_server)
+    if role not in ["Doctor", "Nurse"]:
+        print("Invalid role. Please enter 'Doctor' or 'Nurse'.")
+        sys.exit()
 
-    # Simulate Server Processing the Request
+    # User input for patient data
+    patient_data = {
+        'name': input("Enter patient's name: "),
+        'age': input("Enter patient's age: ")
+    }
+    if role == "Doctor":
+        patient_data['treatment'] = input("Enter patient's treatment: ")
+        patient_data['expenses'] = input("Enter patient's expenses: ")
+
+    # Client encrypts and sends data
+    client_request(role, patient_data, private_key_client, public_key_server)
+
+    # Server receives and processes the request
     server_process_request("request_data.pkl", public_key_client, private_key_server)

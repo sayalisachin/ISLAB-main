@@ -95,3 +95,91 @@ Server Side:
 Provides a menu-driven interface to retrieve patient data by doctor name.
 Verifies the signature (simplified here, replace with actual ElGamal signature verification if needed).
 */
+
+# Install necessary libraries
+# pip install pycryptodome
+
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.Hash import MD5
+import pickle  # For serialization of data
+
+# Generate an RSA key pair
+def generate_rsa_key_pair():
+    key = RSA.generate(2048)
+    private_key = key
+    public_key = key.publickey()
+    return private_key, public_key
+
+# Encrypt patient data using RSA
+def encrypt_data(public_key, data):
+    cipher = PKCS1_OAEP.new(public_key)
+    encrypted_data = cipher.encrypt(data)
+    return encrypted_data
+
+# Compute an MD5 hash of the encrypted data
+def compute_md5_hash(data):
+    md5_hash = MD5.new(data)
+    return md5_hash
+
+# Placeholder ElGamal signature function (replace with actual implementation)
+def elgamal_sign(data_hash):
+    # This is a placeholder signature (actual ElGamal requires a specific key and signing process)
+    return b'signed_data_placeholder'
+
+# Client Side Code
+def client_send_data(file_path, public_key):
+    # Read patient data from file
+    with open(file_path, "rb") as file:
+        patient_data = file.read()
+
+    # Encrypt data
+    encrypted_data = encrypt_data(public_key, patient_data)
+
+    # Generate hash and sign
+    data_hash = compute_md5_hash(encrypted_data).digest()
+    signature = elgamal_sign(data_hash)
+
+    # Prepare data package to send to server
+    data_package = {
+        'encrypted_data': encrypted_data,
+        'signature': signature
+    }
+    
+    # Serialize data package (in practice, you would send this over a network)
+    with open("data_package.pkl", "wb") as file:
+        pickle.dump(data_package, file)
+    print("Data package sent to server (saved to file).")
+
+# Server Side Code
+def retrieve_patient_data(data_package_path, private_key):
+    # Load data package
+    with open(data_package_path, "rb") as file:
+        data_package = pickle.load(file)
+    
+    encrypted_data = data_package['encrypted_data']
+    signature = data_package['signature']
+
+    # Decrypt patient data
+    cipher = PKCS1_OAEP.new(private_key)
+    decrypted_data = cipher.decrypt(encrypted_data)
+
+    # Verify the placeholder signature (simplified)
+    # In a real ElGamal, this would require a proper verification function
+    expected_signature = elgamal_sign(compute_md5_hash(encrypted_data).digest())
+    if signature == expected_signature:
+        print("Signature verified successfully.")
+        print("Decrypted Patient Data:", decrypted_data.decode())
+    else:
+        print("Signature verification failed.")
+
+# Main Program
+if __name__ == "__main__":
+    # Step 1: Generate RSA keys
+    private_key, public_key = generate_rsa_key_pair()
+
+    # Step 2: Client sends encrypted data to server
+    client_send_data("patient_data.txt", public_key)
+
+    # Step 3: Server retrieves and verifies data by doctor name (dummy for example)
+    retrieve_patient_data("data_package.pkl", private_key)

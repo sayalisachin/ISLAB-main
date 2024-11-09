@@ -8,59 +8,118 @@ Decrypt the received data and verify its integrity using the HMAC.
 Display the patient details if the verification succeeds.
 */
 
-#include <stdio.h>
-#include <string.h>
-#include <openssl/evp.h>
-#include <openssl/hmac.h>
-#include <openssl/aes.h>
+pip install pycryptodome
 
-#define SECRET_KEY "secret_key_12345" // Secret key for HMAC
-#define DATA_FILE "patient_data.txt"
 
-// Function prototypes
-void encrypt_AES(const char *data, unsigned char *encrypted);
-void compute_HMAC_SHA256(const char *data, unsigned char *hmac_out);
+from Crypto.Cipher import AES
+from Crypto.Hash import SHA256, HMAC
+from Crypto.Random import get_random_bytes
+import pickle
 
-// Main function
-int main() {
-    FILE *file = fopen(DATA_FILE, "r");
-    if (!file) {
-        perror("File open error");
-        return 1;
+# Shared secret key for HMAC (must be securely shared between client and server)
+SHARED_SECRET_KEY = get_random_bytes(32)  # 32 bytes for HMAC-SHA256
+
+# AES-256 Encryption/Decryption with padding
+def pad(data):
+    # Pads data to be a multiple of 16 bytes (AES block size)
+    padding_length = 16 - (len(data) % 16)
+    return data + bytes([padding_length]) * padding_length
+
+def unpad(data):
+    # Removes padding from decrypted data
+    padding_length = data[-1]
+    return data[:-padding_length]
+
+def generate_aes_key():
+    return get_random_bytes(32)  # 32 bytes for AES-256
+
+def aes_encrypt(key, data):
+    cipher = AES.new(key, AES.MODE_EAX)
+    ciphertext, tag = cipher.encrypt_and_digest(data)
+    return cipher.nonce, ciphertext, tag
+
+def aes_decrypt(key, nonce, ciphertext, tag):
+    cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
+    decrypted_data = cipher.decrypt_and_verify(ciphertext, tag)
+    return decrypted_data
+
+# HMAC-SHA256 Generation and Verification
+def generate_hmac(shared_secret, data):
+    hmac = HMAC.new(shared_secret, digestmod=SHA256)
+    hmac.update(data)
+    return hmac.digest()
+
+def verify_hmac(shared_secret, data, received_hmac):
+    hmac = HMAC.new(shared_secret, digestmod=SHA256)
+    hmac.update(data)
+    try:
+        hmac.verify(received_hmac)
+        return True
+    except ValueError:
+        return False
+
+# Client Side: Encrypt, HMAC, and send data
+def client_send_data(patient_data, aes_key, shared_secret_key):
+    # Convert patient data to bytes
+    data = f"Name: {patient_data['name']}, Age: {patient_data['age']}, Diagnosis: {patient_data['diagnosis']}, Expenses: {patient_data['expenses']}".encode()
+    
+    # AES Encrypt the patient data
+    nonce, ciphertext, tag = aes_encrypt(aes_key, pad(data))
+
+    # Generate HMAC-SHA256 for integrity check
+    hmac = generate_hmac(shared_secret_key, ciphertext)
+
+    # Package data for sending to the server
+    data_package = {
+        'nonce': nonce,
+        'ciphertext': ciphertext,
+        'tag': tag,
+        'hmac': hmac
+    }
+    
+    # Serialize data package (in practice, send this over network)
+    with open("data_package.pkl", "wb") as file:
+        pickle.dump(data_package, file)
+    print("Data package sent to server (saved to file).")
+
+# Server Side: Decrypt, verify HMAC, and display data
+def server_receive_data(data_package_path, aes_key, shared_secret_key):
+    # Load data package
+    with open(data_package_path, "rb") as file:
+        data_package = pickle.load(file)
+
+    nonce = data_package['nonce']
+    ciphertext = data_package['ciphertext']
+    tag = data_package['tag']
+    received_hmac = data_package['hmac']
+
+    # Verify HMAC-SHA256 for integrity check
+    if verify_hmac(shared_secret_key, ciphertext, received_hmac):
+        print("HMAC verification succeeded.")
+        
+        # Decrypt the data
+        decrypted_data = unpad(aes_decrypt(aes_key, nonce, ciphertext, tag))
+        
+        # Display patient data
+        print("Decrypted Patient Data:", decrypted_data.decode())
+    else:
+        print("HMAC verification failed. Data integrity compromised.")
+
+# Main Program
+if __name__ == "__main__":
+    # Generate AES Key for encryption/decryption
+    aes_key = generate_aes_key()
+
+    # Patient data
+    patient_data = {
+        'name': 'John Doe',
+        'age': 35,
+        'diagnosis': 'Flu',
+        'expenses': '$200'
     }
 
-    char data[1024];
-    fread(data, sizeof(char), sizeof(data), file);
-    fclose(file);
+    # Client encrypts and sends data
+    client_send_data(patient_data, aes_key, SHARED_SECRET_KEY)
 
-    unsigned char encrypted[1024];
-    encrypt_AES(data, encrypted);
-
-    unsigned char hmac[EVP_MAX_MD_SIZE];
-    compute_HMAC_SHA256((const char *)encrypted, hmac);
-
-    // Send `encrypted` and `hmac` to server
-
-    return 0;
-}
-
-// Encrypts data using AES
-void encrypt_AES(const char *data, unsigned char *encrypted) {
-    unsigned char key[32] = "this_is_a_32_byte_key__";
-    unsigned char iv[16] = "initial_vector__";
-
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-    EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv);
-
-    int len;
-    EVP_EncryptUpdate(ctx, encrypted, &len, (unsigned char *)data, strlen(data));
-    EVP_EncryptFinal_ex(ctx, encrypted + len, &len);
-
-    EVP_CIPHER_CTX_free(ctx);
-}
-
-// Computes HMAC using SHA256
-void compute_HMAC_SHA256(const char *data, unsigned char *hmac_out) {
-    unsigned int len;
-    HMAC(EVP_sha256(), SECRET_KEY, strlen(SECRET_KEY), (unsigned char *)data, strlen(data), hmac_out, &len);
-}
+    # Server receives and verifies data
+    server_receive_data("data_package.pkl", aes_key, SHARED_SECRET_KEY)
